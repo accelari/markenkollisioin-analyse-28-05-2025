@@ -16,7 +16,7 @@ export default function ComparisonChat() {
   const { messages, analysisResults, isAnalyzing, currentStep, error, runComparisonAnalysis, clearAnalysis } =
     useComparisonAnalysis()
   const [input, setInput] = useState("")
-  const [activeTab, setActiveTab] = useState<"combined" | "claude" | "deepseek">("combined")
+  const [activeTab, setActiveTab] = useState<"combined" | "claude" | "deepseek" | "gemini">("combined")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -38,25 +38,32 @@ export default function ComparisonChat() {
     if (currentStep === "idle") return "pending"
     if (currentStep === step) return "active"
     if (
-      (step === "claude" && (currentStep === "deepseek" || currentStep === "complete")) ||
-      (step === "deepseek" && currentStep === "complete")
+      (step === "claude" && (currentStep === "deepseek" || currentStep === "gemini" || currentStep === "complete")) ||
+      (step === "deepseek" && (currentStep === "gemini" || currentStep === "complete")) ||
+      (step === "gemini" && currentStep === "complete")
     ) {
       return "completed"
     }
     return "pending"
   }
 
-  const getProviderDisplayName = (provider: "anthropic" | "deepseek") => {
-    return provider === "anthropic" ? "Claude (Anthropic)" : "DeepSeek"
+  const getProviderDisplayName = (provider: "anthropic" | "deepseek" | "gemini") => {
+    switch (provider) {
+      case "anthropic":
+        return "Claude (Anthropic)"
+      case "deepseek":
+        return "DeepSeek"
+      case "gemini":
+        return "Gemini (Google)"
+      default:
+        return provider
+    }
   }
-
-  // Filter messages by provider
-  const claudeMessages = messages.filter((m) => m.provider === "anthropic" || m.role === "user")
-  const deepseekMessages = messages.filter((m) => m.provider === "deepseek" || m.role === "user")
 
   // Get analysis results for display
   const claudeAnalysis = analysisResults.find((r) => r.provider === "anthropic")
   const deepseekAnalysis = analysisResults.find((r) => r.provider === "deepseek")
+  const geminiAnalysis = analysisResults.find((r) => r.provider === "gemini")
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -97,6 +104,27 @@ export default function ComparisonChat() {
                       <span className="text-xs text-gray-500">({deepseekAnalysis.content.length} Zeichen)</span>
                     )}
                   </div>
+                  <div className="flex items-center gap-1">
+                    {getStepStatus("gemini") === "completed" ? (
+                      geminiAnalysis?.content.includes("❌") || geminiAnalysis?.content.includes("⚠️") ? (
+                        <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      )
+                    ) : getStepStatus("gemini") === "active" ? (
+                      <Clock className="h-4 w-4 text-blue-600 animate-spin" />
+                    ) : (
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                    )}
+                    <span className="text-sm">Gemini</span>
+                    {geminiAnalysis && (
+                      <span className="text-xs text-gray-500">
+                        {geminiAnalysis.content.includes("❌") || geminiAnalysis.content.includes("⚠️")
+                          ? "(Fehler)"
+                          : `(${geminiAnalysis.content.length} Zeichen)`}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={clearAnalysis} className="flex items-center gap-2">
                   <Trash2 className="h-4 w-4" />
@@ -118,7 +146,7 @@ export default function ComparisonChat() {
           <CardContent className="flex-1 flex flex-col p-0">
             <Tabs
               value={activeTab}
-              onValueChange={(value) => setActiveTab(value as "combined" | "claude" | "deepseek")}
+              onValueChange={(value) => setActiveTab(value as "combined" | "claude" | "deepseek" | "gemini")}
               className="flex-1 flex flex-col"
             >
               <div className="border-b px-4 py-2">
@@ -132,6 +160,10 @@ export default function ComparisonChat() {
                     DeepSeek
                     {deepseekAnalysis && <span className="ml-1 text-xs">✓</span>}
                   </TabsTrigger>
+                  <TabsTrigger value="gemini">
+                    Gemini
+                    {geminiAnalysis && <span className="ml-1 text-xs">✓</span>}
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
@@ -143,8 +175,8 @@ export default function ComparisonChat() {
                         <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
                         <p className="text-lg font-medium">Willkommen zur Markenanwalt Vergleichsanalyse!</p>
                         <p className="text-sm">
-                          Beschreiben Sie Ihren Markenrechtsfall. Beide AI-Modelle werden nacheinander eine vollständige
-                          Analyse durchführen.
+                          Beschreiben Sie Ihren Markenrechtsfall. Alle drei AI-Modelle werden nacheinander eine
+                          vollständige Analyse durchführen.
                         </p>
                       </div>
                     )}
@@ -214,6 +246,7 @@ export default function ComparisonChat() {
                               <span className="text-sm text-gray-500">
                                 {currentStep === "claude" && "Claude führt Markenrechtsanalyse durch..."}
                                 {currentStep === "deepseek" && "DeepSeek führt Markenrechtsanalyse durch..."}
+                                {currentStep === "gemini" && "Gemini führt Markenrechtsanalyse durch..."}
                               </span>
                             </div>
                           </div>
@@ -224,171 +257,102 @@ export default function ComparisonChat() {
                 </ScrollArea>
               </TabsContent>
 
-              <TabsContent value="claude" className="flex-1 p-0 m-0">
-                <ScrollArea className="h-full p-4">
-                  <div className="space-y-4">
-                    {!claudeAnalysis ? (
-                      <div className="text-center text-gray-500 mt-8">
-                        <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
-                        <p className="text-lg font-medium">Claude (Anthropic) Analyse</p>
-                        <p className="text-sm">Starten Sie eine Analyse, um Claude's Ergebnisse hier zu sehen.</p>
-                      </div>
-                    ) : (
+              {/* Individual tabs for each provider */}
+              {["claude", "deepseek", "gemini"].map((provider) => {
+                const analysis = analysisResults.find(
+                  (r) => r.provider === (provider === "claude" ? "anthropic" : provider),
+                )
+                const displayName = getProviderDisplayName(provider === "claude" ? "anthropic" : (provider as any))
+
+                return (
+                  <TabsContent key={provider} value={provider} className="flex-1 p-0 m-0">
+                    <ScrollArea className="h-full p-4">
                       <div className="space-y-4">
-                        {/* User message */}
-                        {messages.find((m) => m.role === "user") && (
-                          <div className="flex gap-3 justify-end">
-                            <div className="flex gap-3 max-w-[85%] flex-row-reverse">
-                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center">
-                                <User className="h-4 w-4" />
+                        {!analysis ? (
+                          <div className="text-center text-gray-500 mt-8">
+                            <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
+                            <p className="text-lg font-medium">{displayName} Analyse</p>
+                            <p className="text-sm">
+                              Starten Sie eine Analyse, um {displayName}'s Ergebnisse hier zu sehen.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {/* User message */}
+                            {messages.find((m) => m.role === "user") && (
+                              <div className="flex gap-3 justify-end">
+                                <div className="flex gap-3 max-w-[85%] flex-row-reverse">
+                                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                                    <User className="h-4 w-4" />
+                                  </div>
+                                  <div className="bg-indigo-600 text-white rounded-lg px-4 py-2">
+                                    <div className="whitespace-pre-wrap break-words">
+                                      {messages.find((m) => m.role === "user")?.content}
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="bg-indigo-600 text-white rounded-lg px-4 py-2">
-                                <div className="whitespace-pre-wrap break-words">
-                                  {messages.find((m) => m.role === "user")?.content}
+                            )}
+
+                            {/* Provider response */}
+                            <div className="flex gap-3 justify-start">
+                              <div className="flex gap-3 max-w-[85%]">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
+                                  <Bot className="h-4 w-4" />
+                                </div>
+                                <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <Badge variant="secondary" className="text-xs">
+                                      {displayName}
+                                    </Badge>
+                                    <span className="text-xs text-gray-500">{analysis.content.length} Zeichen</span>
+                                  </div>
+                                  <div className="whitespace-pre-wrap break-words">
+                                    {analysis.content || (
+                                      <div className="flex items-center gap-2 text-gray-500">
+                                        <AlertCircle className="h-4 w-4" />
+                                        <span>Keine Antwort von {displayName} erhalten</span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* Claude response */}
-                        <div className="flex gap-3 justify-start">
-                          <div className="flex gap-3 max-w-[85%]">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-                              <Bot className="h-4 w-4" />
-                            </div>
-                            <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
-                              <div className="mb-2 flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs">
-                                  Claude (Anthropic)
-                                </Badge>
-                                <span className="text-xs text-gray-500">{claudeAnalysis.content.length} Zeichen</span>
+                        {isAnalyzing && currentStep === provider && (
+                          <div className="flex gap-3 justify-start">
+                            <div className="flex gap-3 max-w-[85%]">
+                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
+                                <Bot className="h-4 w-4" />
                               </div>
-                              <div className="whitespace-pre-wrap break-words">
-                                {claudeAnalysis.content || (
-                                  <div className="flex items-center gap-2 text-gray-500">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <span>Keine Antwort von Claude erhalten</span>
+                              <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex space-x-1">
+                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                    <div
+                                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                                      style={{ animationDelay: "0.1s" }}
+                                    ></div>
+                                    <div
+                                      className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                                      style={{ animationDelay: "0.2s" }}
+                                    ></div>
                                   </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {isAnalyzing && currentStep === "claude" && (
-                      <div className="flex gap-3 justify-start">
-                        <div className="flex gap-3 max-w-[85%]">
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-                            <Bot className="h-4 w-4" />
-                          </div>
-                          <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
-                            <div className="flex items-center gap-2">
-                              <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                <div
-                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.1s" }}
-                                ></div>
-                                <div
-                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.2s" }}
-                                ></div>
-                              </div>
-                              <span className="text-sm text-gray-500">Claude führt Markenrechtsanalyse durch...</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
-
-              <TabsContent value="deepseek" className="flex-1 p-0 m-0">
-                <ScrollArea className="h-full p-4">
-                  <div className="space-y-4">
-                    {!deepseekAnalysis ? (
-                      <div className="text-center text-gray-500 mt-8">
-                        <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
-                        <p className="text-lg font-medium">DeepSeek Analyse</p>
-                        <p className="text-sm">Starten Sie eine Analyse, um DeepSeek's Ergebnisse hier zu sehen.</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* User message */}
-                        {messages.find((m) => m.role === "user") && (
-                          <div className="flex gap-3 justify-end">
-                            <div className="flex gap-3 max-w-[85%] flex-row-reverse">
-                              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center">
-                                <User className="h-4 w-4" />
-                              </div>
-                              <div className="bg-indigo-600 text-white rounded-lg px-4 py-2">
-                                <div className="whitespace-pre-wrap break-words">
-                                  {messages.find((m) => m.role === "user")?.content}
+                                  <span className="text-sm text-gray-500">
+                                    {displayName} führt Markenrechtsanalyse durch...
+                                  </span>
                                 </div>
                               </div>
                             </div>
                           </div>
                         )}
-
-                        {/* DeepSeek response */}
-                        <div className="flex gap-3 justify-start">
-                          <div className="flex gap-3 max-w-[85%]">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-                              <Bot className="h-4 w-4" />
-                            </div>
-                            <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
-                              <div className="mb-2 flex items-center gap-2">
-                                <Badge variant="secondary" className="text-xs">
-                                  DeepSeek
-                                </Badge>
-                                <span className="text-xs text-gray-500">{deepseekAnalysis.content.length} Zeichen</span>
-                              </div>
-                              <div className="whitespace-pre-wrap break-words">
-                                {deepseekAnalysis.content || (
-                                  <div className="flex items-center gap-2 text-gray-500">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <span>Keine Antwort von DeepSeek erhalten</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
                       </div>
-                    )}
-
-                    {isAnalyzing && currentStep === "deepseek" && (
-                      <div className="flex gap-3 justify-start">
-                        <div className="flex gap-3 max-w-[85%]">
-                          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-                            <Bot className="h-4 w-4" />
-                          </div>
-                          <div className="bg-white border border-gray-200 text-gray-800 rounded-lg px-4 py-2">
-                            <div className="flex items-center gap-2">
-                              <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                <div
-                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.1s" }}
-                                ></div>
-                                <div
-                                  className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.2s" }}
-                                ></div>
-                              </div>
-                              <span className="text-sm text-gray-500">DeepSeek führt Markenrechtsanalyse durch...</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </TabsContent>
+                    </ScrollArea>
+                  </TabsContent>
+                )
+              })}
             </Tabs>
 
             <div className="border-t bg-white/50 backdrop-blur-sm p-4">
@@ -411,7 +375,7 @@ export default function ComparisonChat() {
               </form>
               {isAnalyzing && (
                 <div className="mt-2 text-sm text-gray-600">
-                  Vergleichsanalyse läuft... Bitte warten Sie, bis beide Modelle ihre Analyse abgeschlossen haben.
+                  Vergleichsanalyse läuft... Bitte warten Sie, bis alle drei Modelle ihre Analyse abgeschlossen haben.
                 </div>
               )}
             </div>

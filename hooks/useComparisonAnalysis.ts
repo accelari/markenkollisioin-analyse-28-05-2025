@@ -6,12 +6,12 @@ interface Message {
   id: string
   role: "user" | "assistant"
   content: string
-  provider?: "anthropic" | "deepseek"
+  provider?: "anthropic" | "deepseek" | "gemini"
   timestamp?: number
 }
 
 interface AnalysisResult {
-  provider: "anthropic" | "deepseek"
+  provider: "anthropic" | "deepseek" | "gemini"
   content: string
   timestamp: number
 }
@@ -19,7 +19,7 @@ interface AnalysisResult {
 export function useComparisonAnalysis() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [currentStep, setCurrentStep] = useState<"idle" | "claude" | "deepseek" | "complete">("idle")
+  const [currentStep, setCurrentStep] = useState<"idle" | "claude" | "deepseek" | "gemini" | "complete">("idle")
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -65,7 +65,6 @@ export function useComparisonAnalysis() {
           console.error("Claude analysis error:", claudeError)
           const errorMessage = claudeError instanceof Error ? claudeError.message : "Unbekannter Fehler mit Claude"
 
-          // Add error message but continue with DeepSeek
           const claudeErrorMessage: Message = {
             id: (Date.now() + 1).toString(),
             role: "assistant",
@@ -113,11 +112,45 @@ export function useComparisonAnalysis() {
           setError((prev) => (prev ? `${prev}, DeepSeek-Fehler: ${errorMessage}` : `DeepSeek-Fehler: ${errorMessage}`))
         }
 
+        // Step 3: Gemini Analysis
+        console.log("Starting Gemini analysis...")
+        setCurrentStep("gemini")
+
+        try {
+          const geminiResult = await performGeminiAnalysis(userInput)
+          console.log("Gemini analysis completed:", geminiResult.content.length, "characters")
+
+          const geminiMessage: Message = {
+            id: (Date.now() + 3).toString(),
+            role: "assistant",
+            content: geminiResult.content,
+            provider: "gemini",
+            timestamp: geminiResult.timestamp,
+          }
+
+          setMessages((prev) => [...prev, geminiMessage])
+          setAnalysisResults((prev) => [...prev, geminiResult])
+        } catch (geminiError) {
+          console.error("Gemini analysis error:", geminiError)
+          const errorMessage = geminiError instanceof Error ? geminiError.message : "Unbekannter Fehler mit Gemini"
+
+          const geminiErrorMessage: Message = {
+            id: (Date.now() + 3).toString(),
+            role: "assistant",
+            content: `Fehler bei der Gemini-Analyse: ${errorMessage}`,
+            provider: "gemini",
+            timestamp: Date.now(),
+          }
+
+          setMessages((prev) => [...prev, geminiErrorMessage])
+          setError((prev) => (prev ? `${prev}, Gemini-Fehler: ${errorMessage}` : `Gemini-Fehler: ${errorMessage}`))
+        }
+
         setCurrentStep("complete")
       } catch (error) {
         console.error("Comparison analysis error:", error)
         const errorMessage: Message = {
-          id: (Date.now() + 3).toString(),
+          id: (Date.now() + 4).toString(),
           role: "assistant",
           content: `Fehler bei der Vergleichsanalyse: ${error instanceof Error ? error.message : "Unbekannter Fehler"}. Bitte versuchen Sie es erneut.`,
           timestamp: Date.now(),
@@ -175,6 +208,88 @@ export function useComparisonAnalysis() {
       provider: "anthropic",
       content: data.content,
       timestamp: Date.now(),
+    }
+  }
+
+  // Gemini verwendet einen nicht-streamenden Ansatz mit Fehlerbehandlung
+  const performGeminiAnalysis = async (userInput: string): Promise<AnalysisResult> => {
+    const startTime = Date.now()
+    console.log("Starting Gemini analysis with non-streaming approach...")
+
+    try {
+      const response = await fetch("/api/gemini", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: userInput,
+            },
+          ],
+        }),
+      })
+
+      const data = await response.json()
+
+      // Handle quota/rate limit errors specifically
+      if (response.status === 429) {
+        console.log("Gemini quota exceeded, using fallback message")
+        return {
+          provider: "gemini",
+          content: `⚠️ **Gemini API Quota erreicht**
+
+${data.details || "Das kostenlose Kontingent für Gemini wurde überschritten."}
+
+**Hinweis**: Die Markenrechtsanalyse wird mit Claude und DeepSeek fortgesetzt. Für eine vollständige Drei-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das Gemini-Kontingent wieder verfügbar ist.
+
+**Alternative**: Sie können die Einzelanalyse-Funktion verwenden, um Gemini separat zu testen, sobald das Kontingent wieder verfügbar ist.`,
+          timestamp: Date.now(),
+        }
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Gemini API error:", response.status, errorText)
+        throw new Error(`Failed to get response from Gemini: ${response.status}`)
+      }
+
+      if (!data.content || typeof data.content !== "string" || !data.content.trim()) {
+        console.error("Invalid Gemini response:", data)
+        throw new Error("No content received from Gemini")
+      }
+
+      console.log("Gemini analysis completed:", {
+        contentLength: data.content.length,
+        preview: data.content.substring(0, 200) + "...",
+        duration: Date.now() - startTime,
+      })
+
+      return {
+        provider: "gemini",
+        content: data.content,
+        timestamp: Date.now(),
+      }
+    } catch (error) {
+      console.error("Gemini analysis error:", error)
+
+      // Return a fallback message instead of throwing
+      return {
+        provider: "gemini",
+        content: `❌ **Gemini Analyse nicht verfügbar**
+
+Es gab einen Fehler bei der Verbindung zu Gemini: ${error instanceof Error ? error.message : "Unbekannter Fehler"}
+
+**Mögliche Ursachen**:
+- API-Kontingent überschritten (kostenlose Tier-Limits)
+- Temporäre Serverprobleme
+- Netzwerkverbindungsfehler
+
+**Empfehlung**: Die Analyse mit Claude und DeepSeek ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie Gemini später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
+        timestamp: Date.now(),
+      }
     }
   }
 
