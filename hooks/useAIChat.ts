@@ -9,7 +9,7 @@ interface Message {
   content: string
 }
 
-export function useAIChat(provider: "anthropic" | "deepseek" = "anthropic") {
+export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "openai" = "anthropic") {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -70,10 +70,43 @@ export function useAIChat(provider: "anthropic" | "deepseek" = "anthropic") {
         setMessages((prev) => [...prev, assistantMessage])
 
         // Handle streaming response
-        if (provider === "anthropic") {
-          // Use AI SDK streaming format for Anthropic
+        if (provider === "anthropic" || provider === "openai" || provider === "gemini") {
+          // Use AI SDK streaming format for Anthropic, OpenAI, and Gemini
+          // For non-streaming responses, we'll get a JSON response with content field
+          try {
+            const data = await response.json()
+            if (data.content) {
+              setMessages((prev) =>
+                prev.map((msg) => (msg.id === assistantMessage.id ? { ...msg, content: data.content } : msg)),
+              )
+              return
+            }
+          } catch (e) {
+            // Not JSON, continue with streaming
+          }
+
+          // Reset reader position
+          const newResponse = await fetch(apiEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messages: [...messages, userMessage].map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+              })),
+            }),
+          })
+
+          const newReader = newResponse.body?.getReader()
+          if (!newReader) {
+            throw new Error("No response body")
+          }
+
+          // Handle streaming
           while (true) {
-            const { done, value } = await reader.read()
+            const { done, value } = await newReader.read()
             if (done) break
 
             const chunk = decoder.decode(value)
@@ -83,6 +116,19 @@ export function useAIChat(provider: "anthropic" | "deepseek" = "anthropic") {
               if (line.startsWith("0:")) {
                 try {
                   const data = JSON.parse(line.slice(2))
+                  if (data.content) {
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessage.id ? { ...msg, content: msg.content + data.content } : msg,
+                      ),
+                    )
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              } else if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6))
                   if (data.content) {
                     setMessages((prev) =>
                       prev.map((msg) =>

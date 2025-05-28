@@ -16,7 +16,7 @@ export default function ComparisonChat() {
   const { messages, analysisResults, isAnalyzing, currentStep, error, runComparisonAnalysis, clearAnalysis } =
     useComparisonAnalysis()
   const [input, setInput] = useState("")
-  const [activeTab, setActiveTab] = useState<"combined" | "claude" | "deepseek" | "gemini">("combined")
+  const [activeTab, setActiveTab] = useState<"combined" | "claude" | "deepseek" | "gemini" | "openai">("combined")
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -38,16 +38,21 @@ export default function ComparisonChat() {
     if (currentStep === "idle") return "pending"
     if (currentStep === step) return "active"
     if (
-      (step === "claude" && (currentStep === "deepseek" || currentStep === "gemini" || currentStep === "complete")) ||
-      (step === "deepseek" && (currentStep === "gemini" || currentStep === "complete")) ||
-      (step === "gemini" && currentStep === "complete")
+      (step === "claude" &&
+        (currentStep === "deepseek" ||
+          currentStep === "gemini" ||
+          currentStep === "openai" ||
+          currentStep === "complete")) ||
+      (step === "deepseek" && (currentStep === "gemini" || currentStep === "openai" || currentStep === "complete")) ||
+      (step === "gemini" && (currentStep === "openai" || currentStep === "complete")) ||
+      (step === "openai" && currentStep === "complete")
     ) {
       return "completed"
     }
     return "pending"
   }
 
-  const getProviderDisplayName = (provider: "anthropic" | "deepseek" | "gemini") => {
+  const getProviderDisplayName = (provider: "anthropic" | "deepseek" | "gemini" | "openai") => {
     switch (provider) {
       case "anthropic":
         return "Claude (Anthropic)"
@@ -55,6 +60,8 @@ export default function ComparisonChat() {
         return "DeepSeek"
       case "gemini":
         return "Gemini (Google)"
+      case "openai":
+        return "GPT-4o (OpenAI)"
       default:
         return provider
     }
@@ -64,6 +71,7 @@ export default function ComparisonChat() {
   const claudeAnalysis = analysisResults.find((r) => r.provider === "anthropic")
   const deepseekAnalysis = analysisResults.find((r) => r.provider === "deepseek")
   const geminiAnalysis = analysisResults.find((r) => r.provider === "gemini")
+  const openaiAnalysis = analysisResults.find((r) => r.provider === "openai")
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -125,6 +133,27 @@ export default function ComparisonChat() {
                       </span>
                     )}
                   </div>
+                  <div className="flex items-center gap-1">
+                    {getStepStatus("openai") === "completed" ? (
+                      openaiAnalysis?.content.includes("❌") || openaiAnalysis?.content.includes("⚠️") ? (
+                        <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      )
+                    ) : getStepStatus("openai") === "active" ? (
+                      <Clock className="h-4 w-4 text-blue-600 animate-spin" />
+                    ) : (
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                    )}
+                    <span className="text-sm">GPT-4o</span>
+                    {openaiAnalysis && (
+                      <span className="text-xs text-gray-500">
+                        {openaiAnalysis.content.includes("❌") || openaiAnalysis.content.includes("⚠️")
+                          ? "(Fehler)"
+                          : `(${openaiAnalysis.content.length} Zeichen)`}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <Button variant="outline" size="sm" onClick={clearAnalysis} className="flex items-center gap-2">
                   <Trash2 className="h-4 w-4" />
@@ -146,7 +175,7 @@ export default function ComparisonChat() {
           <CardContent className="flex-1 flex flex-col p-0">
             <Tabs
               value={activeTab}
-              onValueChange={(value) => setActiveTab(value as "combined" | "claude" | "deepseek" | "gemini")}
+              onValueChange={(value) => setActiveTab(value as "combined" | "claude" | "deepseek" | "gemini" | "openai")}
               className="flex-1 flex flex-col"
             >
               <div className="border-b px-4 py-2">
@@ -164,6 +193,10 @@ export default function ComparisonChat() {
                     Gemini
                     {geminiAnalysis && <span className="ml-1 text-xs">✓</span>}
                   </TabsTrigger>
+                  <TabsTrigger value="openai">
+                    GPT-4o
+                    {openaiAnalysis && <span className="ml-1 text-xs">✓</span>}
+                  </TabsTrigger>
                 </TabsList>
               </div>
 
@@ -175,7 +208,7 @@ export default function ComparisonChat() {
                         <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
                         <p className="text-lg font-medium">Willkommen zur Markenanwalt Vergleichsanalyse!</p>
                         <p className="text-sm">
-                          Beschreiben Sie Ihren Markenrechtsfall. Alle drei AI-Modelle werden nacheinander eine
+                          Beschreiben Sie Ihren Markenrechtsfall. Alle vier AI-Modelle werden nacheinander eine
                           vollständige Analyse durchführen.
                         </p>
                       </div>
@@ -247,6 +280,7 @@ export default function ComparisonChat() {
                                 {currentStep === "claude" && "Claude führt Markenrechtsanalyse durch..."}
                                 {currentStep === "deepseek" && "DeepSeek führt Markenrechtsanalyse durch..."}
                                 {currentStep === "gemini" && "Gemini führt Markenrechtsanalyse durch..."}
+                                {currentStep === "openai" && "GPT-4o führt Markenrechtsanalyse durch..."}
                               </span>
                             </div>
                           </div>
@@ -258,7 +292,7 @@ export default function ComparisonChat() {
               </TabsContent>
 
               {/* Individual tabs for each provider */}
-              {["claude", "deepseek", "gemini"].map((provider) => {
+              {["claude", "deepseek", "gemini", "openai"].map((provider) => {
                 const analysis = analysisResults.find(
                   (r) => r.provider === (provider === "claude" ? "anthropic" : provider),
                 )
@@ -375,7 +409,7 @@ export default function ComparisonChat() {
               </form>
               {isAnalyzing && (
                 <div className="mt-2 text-sm text-gray-600">
-                  Vergleichsanalyse läuft... Bitte warten Sie, bis alle drei Modelle ihre Analyse abgeschlossen haben.
+                  Vergleichsanalyse läuft... Bitte warten Sie, bis alle vier Modelle ihre Analyse abgeschlossen haben.
                 </div>
               )}
             </div>

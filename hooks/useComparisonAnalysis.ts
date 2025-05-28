@@ -6,12 +6,12 @@ interface Message {
   id: string
   role: "user" | "assistant"
   content: string
-  provider?: "anthropic" | "deepseek" | "gemini"
+  provider?: "anthropic" | "deepseek" | "gemini" | "openai"
   timestamp?: number
 }
 
 interface AnalysisResult {
-  provider: "anthropic" | "deepseek" | "gemini"
+  provider: "anthropic" | "deepseek" | "gemini" | "openai"
   content: string
   timestamp: number
 }
@@ -19,7 +19,9 @@ interface AnalysisResult {
 export function useComparisonAnalysis() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [currentStep, setCurrentStep] = useState<"idle" | "claude" | "deepseek" | "gemini" | "complete">("idle")
+  const [currentStep, setCurrentStep] = useState<"idle" | "claude" | "deepseek" | "gemini" | "openai" | "complete">(
+    "idle",
+  )
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -146,11 +148,45 @@ export function useComparisonAnalysis() {
           setError((prev) => (prev ? `${prev}, Gemini-Fehler: ${errorMessage}` : `Gemini-Fehler: ${errorMessage}`))
         }
 
+        // Step 4: OpenAI Analysis
+        console.log("Starting OpenAI analysis...")
+        setCurrentStep("openai")
+
+        try {
+          const openaiResult = await performOpenAIAnalysis(userInput)
+          console.log("OpenAI analysis completed:", openaiResult.content.length, "characters")
+
+          const openaiMessage: Message = {
+            id: (Date.now() + 4).toString(),
+            role: "assistant",
+            content: openaiResult.content,
+            provider: "openai",
+            timestamp: openaiResult.timestamp,
+          }
+
+          setMessages((prev) => [...prev, openaiMessage])
+          setAnalysisResults((prev) => [...prev, openaiResult])
+        } catch (openaiError) {
+          console.error("OpenAI analysis error:", openaiError)
+          const errorMessage = openaiError instanceof Error ? openaiError.message : "Unbekannter Fehler mit OpenAI"
+
+          const openaiErrorMessage: Message = {
+            id: (Date.now() + 4).toString(),
+            role: "assistant",
+            content: `Fehler bei der OpenAI-Analyse: ${errorMessage}`,
+            provider: "openai",
+            timestamp: Date.now(),
+          }
+
+          setMessages((prev) => [...prev, openaiErrorMessage])
+          setError((prev) => (prev ? `${prev}, OpenAI-Fehler: ${errorMessage}` : `OpenAI-Fehler: ${errorMessage}`))
+        }
+
         setCurrentStep("complete")
       } catch (error) {
         console.error("Comparison analysis error:", error)
         const errorMessage: Message = {
-          id: (Date.now() + 4).toString(),
+          id: (Date.now() + 5).toString(),
           role: "assistant",
           content: `Fehler bei der Vergleichsanalyse: ${error instanceof Error ? error.message : "Unbekannter Fehler"}. Bitte versuchen Sie es erneut.`,
           timestamp: Date.now(),
@@ -243,7 +279,7 @@ export function useComparisonAnalysis() {
 
 ${data.details || "Das kostenlose Kontingent für Gemini wurde überschritten."}
 
-**Hinweis**: Die Markenrechtsanalyse wird mit Claude und DeepSeek fortgesetzt. Für eine vollständige Drei-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das Gemini-Kontingent wieder verfügbar ist.
+**Hinweis**: Die Markenrechtsanalyse wird mit den anderen Modellen fortgesetzt. Für eine vollständige Vier-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das Gemini-Kontingent wieder verfügbar ist.
 
 **Alternative**: Sie können die Einzelanalyse-Funktion verwenden, um Gemini separat zu testen, sobald das Kontingent wieder verfügbar ist.`,
           timestamp: Date.now(),
@@ -287,7 +323,89 @@ Es gab einen Fehler bei der Verbindung zu Gemini: ${error instanceof Error ? err
 - Temporäre Serverprobleme
 - Netzwerkverbindungsfehler
 
-**Empfehlung**: Die Analyse mit Claude und DeepSeek ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie Gemini später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
+**Empfehlung**: Die Analyse mit den anderen Modellen ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie Gemini später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
+        timestamp: Date.now(),
+      }
+    }
+  }
+
+  // OpenAI verwendet einen nicht-streamenden Ansatz mit Fehlerbehandlung
+  const performOpenAIAnalysis = async (userInput: string): Promise<AnalysisResult> => {
+    const startTime = Date.now()
+    console.log("Starting OpenAI analysis with non-streaming approach...")
+
+    try {
+      const response = await fetch("/api/openai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: userInput,
+            },
+          ],
+        }),
+      })
+
+      const data = await response.json()
+
+      // Handle quota/rate limit errors specifically
+      if (response.status === 429) {
+        console.log("OpenAI quota exceeded, using fallback message")
+        return {
+          provider: "openai",
+          content: `⚠️ **OpenAI API Quota erreicht**
+
+${data.details || "Das Kontingent für OpenAI wurde überschritten."}
+
+**Hinweis**: Die Markenrechtsanalyse wird mit den anderen Modellen fortgesetzt. Für eine vollständige Vier-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das OpenAI-Kontingent wieder verfügbar ist.
+
+**Alternative**: Sie können die Einzelanalyse-Funktion verwenden, um OpenAI separat zu testen, sobald das Kontingent wieder verfügbar ist.`,
+          timestamp: Date.now(),
+        }
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("OpenAI API error:", response.status, errorText)
+        throw new Error(`Failed to get response from OpenAI: ${response.status}`)
+      }
+
+      if (!data.content || typeof data.content !== "string" || !data.content.trim()) {
+        console.error("Invalid OpenAI response:", data)
+        throw new Error("No content received from OpenAI")
+      }
+
+      console.log("OpenAI analysis completed:", {
+        contentLength: data.content.length,
+        preview: data.content.substring(0, 200) + "...",
+        duration: Date.now() - startTime,
+      })
+
+      return {
+        provider: "openai",
+        content: data.content,
+        timestamp: Date.now(),
+      }
+    } catch (error) {
+      console.error("OpenAI analysis error:", error)
+
+      // Return a fallback message instead of throwing
+      return {
+        provider: "openai",
+        content: `❌ **OpenAI Analyse nicht verfügbar**
+
+Es gab einen Fehler bei der Verbindung zu OpenAI: ${error instanceof Error ? error.message : "Unbekannter Fehler"}
+
+**Mögliche Ursachen**:
+- API-Kontingent überschritten
+- Temporäre Serverprobleme
+- Netzwerkverbindungsfehler
+
+**Empfehlung**: Die Analyse mit den anderen Modellen ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie OpenAI später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
         timestamp: Date.now(),
       }
     }

@@ -11,7 +11,7 @@ import { Send, Bot, User, Trash2 } from "lucide-react"
 import { useRef, useEffect, useState } from "react"
 
 export default function ChatPage() {
-  const [selectedModel, setSelectedModel] = useState<"anthropic" | "deepseek">("anthropic")
+  const [selectedModel, setSelectedModel] = useState<"anthropic" | "deepseek" | "gemini" | "openai">("anthropic")
   const [activeTab, setActiveTab] = useState<"single" | "comparison">("comparison")
   const chat = useAIChat(selectedModel)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -29,7 +29,18 @@ export default function ChatPage() {
   }, [selectedModel])
 
   const getModelDisplayName = () => {
-    return selectedModel === "anthropic" ? "Claude (Anthropic)" : "DeepSeek"
+    switch (selectedModel) {
+      case "anthropic":
+        return "Claude (Anthropic)"
+      case "deepseek":
+        return "DeepSeek"
+      case "gemini":
+        return "Gemini (Google)"
+      case "openai":
+        return "GPT-4o (OpenAI)"
+      default:
+        return selectedModel
+    }
   }
 
   if (activeTab === "comparison") {
@@ -59,11 +70,13 @@ export default function ChatPage() {
                   <label className="text-sm font-medium">Modell:</label>
                   <select
                     value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value as "anthropic" | "deepseek")}
+                    onChange={(e) => setSelectedModel(e.target.value as "anthropic" | "deepseek" | "gemini" | "openai")}
                     className="px-2 py-1 border border-gray-300 rounded text-sm"
                   >
                     <option value="anthropic">Claude (Anthropic)</option>
                     <option value="deepseek">DeepSeek</option>
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="openai">GPT-4o (OpenAI)</option>
                   </select>
                 </div>
                 <Button variant="outline" size="sm" onClick={chat.setMessages} className="flex items-center gap-2">
