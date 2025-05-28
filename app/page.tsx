@@ -31,7 +31,7 @@ export default function ChatPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bot className="h-6 w-6 text-indigo-600" />
-                <CardTitle className="text-xl font-semibold text-gray-800">Markenanwalt Claude</CardTitle>
+                <CardTitle className="text-xl font-semibold text-gray-800">Claude Chatbot</CardTitle>
               </div>
               <Button variant="outline" size="sm" onClick={clearChat} className="flex items-center gap-2">
                 <Trash2 className="h-4 w-4" />
@@ -46,8 +46,8 @@ export default function ChatPage() {
                 {messages.length === 0 && (
                   <div className="text-center text-gray-500 mt-8">
                     <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
-                    <p className="text-lg font-medium">Willkommen beim Markenanwalt Claude!</p>
-                    <p className="text-sm">Beschreiben Sie Ihren Markenrechtsfall für eine professionelle Analyse.</p>
+                    <p className="text-lg font-medium">Willkommen beim Claude Chatbot!</p>
+                    <p className="text-sm">Stellen Sie eine Frage, um zu beginnen.</p>
                   </div>
                 )}
 
@@ -98,7 +98,7 @@ export default function ChatPage() {
                               style={{ animationDelay: "0.2s" }}
                             ></div>
                           </div>
-                          <span className="text-sm text-gray-500">Markenanwalt Claude analysiert...</span>
+                          <span className="text-sm text-gray-500">Claude denkt nach...</span>
                         </div>
                       </div>
                     </div>
@@ -112,7 +112,7 @@ export default function ChatPage() {
                 <Input
                   value={input}
                   onChange={handleInputChange}
-                  placeholder="Beschreiben Sie Ihren Markenrechtsfall..."
+                  placeholder="Schreiben Sie Ihre Nachricht..."
                   disabled={isLoading}
                   className="flex-1"
                   autoFocus
