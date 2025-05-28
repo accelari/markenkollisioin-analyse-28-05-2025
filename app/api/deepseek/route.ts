@@ -1,15 +1,22 @@
-import { anthropic } from "@ai-sdk/anthropic"
-import { streamText } from "ai"
-
-export const maxDuration = 30
+// DeepSeek API Route
+export const maxDuration = 60
 
 export async function POST(req: Request) {
   const { messages } = await req.json()
 
-  const result = streamText({
-    model: anthropic("claude-3-5-sonnet-latest"),
-    messages,
-    system: `Du bist ein erfahrener Markenanwalt mit 40 Jahren Berufserfahrung im internationalen Markenrecht. Deine Analysen müssen höchsten Standards entsprechen und durch einen mehrstufigen Validierungsprozess geprüft werden.
+  try {
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: `Du bist ein erfahrener Markenanwalt mit 40 Jahren Berufserfahrung im internationalen Markenrecht. Deine Analysen müssen höchsten Standards entsprechen und durch einen mehrstufigen Validierungsprozess geprüft werden.
 
 Analysiere den folgenden Markenrechtsfall basierend auf diesen VERBINDLICHEN rechtlichen Kriterien:
 
@@ -58,7 +65,71 @@ Deine Antwort MUSS diesem Format folgen:
  d) Konsistenzprüfung: Bestätigung der Widerspruchsfreiheit oder Korrektur
 
 WICHTIG: Du darfst NUR dann eine endgültige Empfehlung abgeben, wenn alle vier Validierungsmethoden ein konsistentes Ergebnis liefern. Bei Inkonsistenzen musst du deine Analyse überarbeiten, bis ein stimmiges Gesamtbild entsteht.`,
-  })
+          },
+          ...messages,
+        ],
+        stream: true,
+        temperature: 0.1,
+        max_tokens: 4000,
+      }),
+    })
 
-  return result.toDataStreamResponse()
+    if (!response.ok) {
+      throw new Error(`DeepSeek API error: ${response.status}`)
+    }
+
+    // Create a readable stream for the response
+    const encoder = new TextEncoder()
+    const decoder = new TextDecoder()
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = response.body?.getReader()
+        if (!reader) return
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            const chunk = decoder.decode(value)
+            const lines = chunk.split("\n")
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6)
+                if (data === "[DONE]") continue
+
+                try {
+                  const parsed = JSON.parse(data)
+                  const content = parsed.choices?.[0]?.delta?.content
+                  if (content) {
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                  }
+                } catch (e) {
+                  // Skip invalid JSON
+                }
+              }
+            }
+          }
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    })
+  } catch (error) {
+    console.error("DeepSeek API error:", error)
+    return new Response(JSON.stringify({ error: "Failed to connect to DeepSeek API" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    })
+  }
 }

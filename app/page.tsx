@@ -1,15 +1,19 @@
 "use client"
 
-import { useChat } from "ai/react"
+import { useAIChat } from "../hooks/useAIChat"
+import ComparisonChat from "../components/comparison-chat"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Send, Bot, User, Trash2 } from "lucide-react"
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
 
 export default function ChatPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading, reload, stop, setMessages } = useChat()
+  const [selectedModel, setSelectedModel] = useState<"anthropic" | "deepseek">("anthropic")
+  const [activeTab, setActiveTab] = useState<"single" | "comparison">("comparison")
+  const chat = useAIChat(selectedModel)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -17,10 +21,19 @@ export default function ChatPage() {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
     }
-  }, [messages])
+  }, [chat.messages])
 
-  const clearChat = () => {
-    setMessages([])
+  // Clear messages when switching models
+  useEffect(() => {
+    chat.setMessages()
+  }, [selectedModel])
+
+  const getModelDisplayName = () => {
+    return selectedModel === "anthropic" ? "Claude (Anthropic)" : "DeepSeek"
+  }
+
+  if (activeTab === "comparison") {
+    return <ComparisonChat />
   }
 
   return (
@@ -31,27 +44,48 @@ export default function ChatPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bot className="h-6 w-6 text-indigo-600" />
-                <CardTitle className="text-xl font-semibold text-gray-800">Markenanwalt Claude</CardTitle>
+                <CardTitle className="text-xl font-semibold text-gray-800">
+                  Markenanwalt {getModelDisplayName()}
+                </CardTitle>
               </div>
-              <Button variant="outline" size="sm" onClick={clearChat} className="flex items-center gap-2">
-                <Trash2 className="h-4 w-4" />
-                Chat löschen
-              </Button>
+              <div className="flex items-center gap-2">
+                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "single" | "comparison")}>
+                  <TabsList>
+                    <TabsTrigger value="single">Einzelanalyse</TabsTrigger>
+                    <TabsTrigger value="comparison">Vergleichsanalyse</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="flex items-center gap-2 mr-4">
+                  <label className="text-sm font-medium">Modell:</label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value as "anthropic" | "deepseek")}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="anthropic">Claude (Anthropic)</option>
+                    <option value="deepseek">DeepSeek</option>
+                  </select>
+                </div>
+                <Button variant="outline" size="sm" onClick={chat.setMessages} className="flex items-center gap-2">
+                  <Trash2 className="h-4 w-4" />
+                  Chat löschen
+                </Button>
+              </div>
             </div>
           </CardHeader>
 
           <CardContent className="flex-1 flex flex-col p-0">
             <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
               <div className="space-y-4">
-                {messages.length === 0 && (
+                {chat.messages.length === 0 && (
                   <div className="text-center text-gray-500 mt-8">
                     <Bot className="h-12 w-12 mx-auto mb-4 text-indigo-400" />
-                    <p className="text-lg font-medium">Willkommen beim Markenanwalt Claude!</p>
+                    <p className="text-lg font-medium">Willkommen beim Markenanwalt {getModelDisplayName()}!</p>
                     <p className="text-sm">Beschreiben Sie Ihren Markenrechtsfall für eine professionelle Analyse.</p>
                   </div>
                 )}
 
-                {messages.map((message) => (
+                {chat.messages.map((message) => (
                   <div
                     key={message.id}
                     className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
@@ -79,7 +113,7 @@ export default function ChatPage() {
                   </div>
                 ))}
 
-                {isLoading && (
+                {chat.isLoading && (
                   <div className="flex gap-3 justify-start">
                     <div className="flex gap-3 max-w-[80%]">
                       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
@@ -98,7 +132,9 @@ export default function ChatPage() {
                               style={{ animationDelay: "0.2s" }}
                             ></div>
                           </div>
-                          <span className="text-sm text-gray-500">Markenanwalt Claude analysiert...</span>
+                          <span className="text-sm text-gray-500">
+                            Markenanwalt {getModelDisplayName()} analysiert...
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -108,24 +144,24 @@ export default function ChatPage() {
             </ScrollArea>
 
             <div className="border-t bg-white/50 backdrop-blur-sm p-4">
-              <form onSubmit={handleSubmit} className="flex gap-2">
+              <form onSubmit={chat.handleSubmit} className="flex gap-2">
                 <Input
-                  value={input}
-                  onChange={handleInputChange}
+                  value={chat.input}
+                  onChange={chat.handleInputChange}
                   placeholder="Beschreiben Sie Ihren Markenrechtsfall..."
-                  disabled={isLoading}
+                  disabled={chat.isLoading}
                   className="flex-1"
                   autoFocus
                 />
                 <Button
                   type="submit"
-                  disabled={isLoading || !input.trim()}
+                  disabled={chat.isLoading || !chat.input.trim()}
                   className="bg-indigo-600 hover:bg-indigo-700"
                 >
                   <Send className="h-4 w-4" />
                 </Button>
-                {isLoading && (
-                  <Button type="button" variant="outline" onClick={stop}>
+                {chat.isLoading && (
+                  <Button type="button" variant="outline" onClick={chat.stop}>
                     Stopp
                   </Button>
                 )}
