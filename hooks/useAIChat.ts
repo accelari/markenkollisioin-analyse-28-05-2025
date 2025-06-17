@@ -9,9 +9,16 @@ interface Message {
   content: string
 }
 
-export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "openai" = "anthropic") {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState("")
+interface UseAIChatOptions {
+  onAnalysisComplete?: (content: string) => void
+}
+
+export function useAIChat(
+  provider: "anthropic" | "deepseek" | "gemini" | "openai" = "anthropic",
+  options?: UseAIChatOptions,
+) {
+  const [messages, setMessages] = useState<Message[]>([]) // Internal message history
+  const [input, setInput] = useState("") // Not used if customMessage is always provided
   const [isLoading, setIsLoading] = useState(false)
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -19,22 +26,27 @@ export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "opena
   }, [])
 
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    async (e: React.FormEvent, customMessage?: string) => {
       e.preventDefault()
-      if (!input.trim() || isLoading) return
+      const messageToSend = customMessage || input.trim()
+      if (!messageToSend || isLoading) return
 
       const userMessage: Message = {
         id: Date.now().toString(),
         role: "user",
-        content: input.trim(),
+        content: messageToSend,
       }
 
+      // Update internal messages, but UI will primarily use modal for final result
       setMessages((prev) => [...prev, userMessage])
-      setInput("")
+
+      if (!customMessage) {
+        setInput("")
+      }
       setIsLoading(true)
+      let fullAssistantContent = ""
 
       try {
-        // Direkte API-Endpunkte ohne generischen Router
         const apiEndpoint = `/api/${provider}`
 
         const response = await fetch(apiEndpoint, {
@@ -43,107 +55,42 @@ export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "opena
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            messages: [...messages, userMessage].map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            })),
+            // Send only current user message and system prompt (handled by API route)
+            // Or, if your API expects history, map messages state:
+            messages: [{ role: userMessage.role, content: userMessage.content }],
           }),
         })
 
         if (!response.ok) {
-          throw new Error(`Failed to get response from ${provider}`)
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.details || `Failed to get response from ${provider}: ${response.status}`)
         }
 
-        const reader = response.body?.getReader()
-        const decoder = new TextDecoder()
-
-        if (!reader) {
-          throw new Error("No response body")
-        }
-
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: "",
-        }
-
-        setMessages((prev) => [...prev, assistantMessage])
-
-        // Handle streaming response
+        // Non-streaming for Claude, Gemini, OpenAI as per current API routes
         if (provider === "anthropic" || provider === "openai" || provider === "gemini") {
-          // Use AI SDK streaming format for Anthropic, OpenAI, and Gemini
-          // For non-streaming responses, we'll get a JSON response with content field
-          try {
-            const data = await response.json()
-            if (data.content) {
-              setMessages((prev) =>
-                prev.map((msg) => (msg.id === assistantMessage.id ? { ...msg, content: data.content } : msg)),
-              )
-              return
+          const data = await response.json()
+          if (data.content) {
+            fullAssistantContent = data.content
+            // Update internal messages if needed
+            const assistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: fullAssistantContent,
             }
-          } catch (e) {
-            // Not JSON, continue with streaming
-          }
-
-          // Reset reader position
-          const newResponse = await fetch(apiEndpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messages: [...messages, userMessage].map((msg) => ({
-                role: msg.role,
-                content: msg.content,
-              })),
-            }),
-          })
-
-          const newReader = newResponse.body?.getReader()
-          if (!newReader) {
-            throw new Error("No response body")
-          }
-
-          // Handle streaming
-          while (true) {
-            const { done, value } = await newReader.read()
-            if (done) break
-
-            const chunk = decoder.decode(value)
-            const lines = chunk.split("\n")
-
-            for (const line of lines) {
-              if (line.startsWith("0:")) {
-                try {
-                  const data = JSON.parse(line.slice(2))
-                  if (data.content) {
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessage.id ? { ...msg, content: msg.content + data.content } : msg,
-                      ),
-                    )
-                  }
-                } catch (e) {
-                  // Skip invalid JSON
-                }
-              } else if (line.startsWith("data: ")) {
-                try {
-                  const data = JSON.parse(line.slice(6))
-                  if (data.content) {
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessage.id ? { ...msg, content: msg.content + data.content } : msg,
-                      ),
-                    )
-                  }
-                } catch (e) {
-                  // Skip invalid JSON
-                }
-              }
-            }
+            setMessages((prev) => [...prev, assistantMessage])
+          } else {
+            throw new Error(`No content in response from ${provider}`)
           }
         } else {
-          // Handle DeepSeek streaming format
+          // DeepSeek streaming
+          const reader = response.body?.getReader()
+          const decoder = new TextDecoder()
+          if (!reader) throw new Error("No response body for DeepSeek")
+
+          // Add a placeholder for assistant message internally if needed
+          const assistantMessageId = (Date.now() + 1).toString()
+          setMessages((prev) => [...prev, { id: assistantMessageId, role: "assistant", content: "" }])
+
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
@@ -154,39 +101,62 @@ export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "opena
             for (const line of lines) {
               if (line.startsWith("data: ")) {
                 try {
-                  const data = JSON.parse(line.slice(6))
+                  const dataContent = line.slice(6).trim()
+                  if (dataContent === "[DONE]") continue
+                  const data = JSON.parse(dataContent)
                   if (data.content) {
+                    fullAssistantContent += data.content
                     setMessages((prev) =>
                       prev.map((msg) =>
-                        msg.id === assistantMessage.id ? { ...msg, content: msg.content + data.content } : msg,
+                        msg.id === assistantMessageId ? { ...msg, content: fullAssistantContent } : msg,
+                      ),
+                    )
+                  } else if (data.choices?.[0]?.delta?.content) {
+                    fullAssistantContent += data.choices[0].delta.content
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessageId ? { ...msg, content: fullAssistantContent } : msg,
                       ),
                     )
                   }
                 } catch (e) {
-                  // Skip invalid JSON
+                  /* Skip invalid JSON */
                 }
               }
             }
           }
         }
+
+        if (options?.onAnalysisComplete && fullAssistantContent) {
+          options.onAnalysisComplete(fullAssistantContent)
+        }
       } catch (error) {
         console.error("Error:", error)
+        const errorMessageContent =
+          error instanceof Error
+            ? error.message
+            : `Entschuldigung, es gab einen Fehler bei der Verbindung zu ${provider}. Bitte versuchen Sie es erneut.`
+        if (options?.onAnalysisComplete) {
+          options.onAnalysisComplete(`❌ Fehler: ${errorMessageContent}`)
+        }
+        // Update internal messages with error
         setMessages((prev) => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             role: "assistant",
-            content: `Entschuldigung, es gab einen Fehler bei der Verbindung zu ${provider}. Bitte versuchen Sie es erneut.`,
+            content: `❌ Fehler: ${errorMessageContent}`,
           },
         ])
       } finally {
         setIsLoading(false)
       }
     },
-    [input, messages, isLoading, provider],
+    [input, isLoading, provider, options], // Removed `messages` from deps to avoid stale closure if API doesn't need full history
   )
 
   const stop = useCallback(() => {
+    // Stop function might need more robust implementation if requests are truly cancellable
     setIsLoading(false)
   }, [])
 
@@ -195,12 +165,12 @@ export function useAIChat(provider: "anthropic" | "deepseek" | "gemini" | "opena
   }, [])
 
   return {
-    messages,
+    messages, // Internal messages, primarily for potential debugging or future history features
     input,
     handleInputChange,
     handleSubmit,
     isLoading,
     stop,
-    setMessages: clearMessages,
+    setMessages: clearMessages, // Exposes a way to clear internal messages
   }
 }

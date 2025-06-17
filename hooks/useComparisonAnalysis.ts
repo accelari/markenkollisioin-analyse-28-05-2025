@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react"
 
-interface Message {
+export interface Message {
+  // Keep if you plan to use it for user input display or internal logging
   id: string
   role: "user" | "assistant"
   content: string
@@ -10,20 +11,21 @@ interface Message {
   timestamp?: number
 }
 
-interface AnalysisResult {
+export type AnalysisStep = "idle" | "claude" | "deepseek" | "gemini" | "openai" | "complete" | "final" | "all_complete"
+
+export interface AnalysisResult {
   provider: "anthropic" | "deepseek" | "gemini" | "openai"
   content: string
   timestamp: number
 }
 
 export function useComparisonAnalysis() {
-  const [messages, setMessages] = useState<Message[]>([])
+  // const [messages, setMessages] = useState<Message[]>([]) // Potentially remove if not displayed
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [currentStep, setCurrentStep] = useState<"idle" | "claude" | "deepseek" | "gemini" | "openai" | "complete">(
-    "idle",
-  )
+  const [currentStep, setCurrentStep] = useState<AnalysisStep>("idle")
   const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [finalAnalysis, setFinalAnalysis] = useState<string | null>(null)
 
   const runComparisonAnalysis = useCallback(
     async (userInput: string) => {
@@ -33,488 +35,232 @@ export function useComparisonAnalysis() {
       setCurrentStep("claude")
       setAnalysisResults([])
       setError(null)
+      // setMessages([]) // Clear previous messages if they were used
 
-      // Add user message
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        role: "user",
-        content: userInput,
-        timestamp: Date.now(),
+      // Optional: Add user message to internal log if needed
+      // const userMessage: Message = {
+      //   id: Date.now().toString(),
+      //   role: "user",
+      //   content: userInput,
+      //   timestamp: Date.now(),
+      // }
+      // setMessages([userMessage])
+
+      const providers: ("anthropic" | "deepseek" | "gemini" | "openai")[] = [
+        "anthropic",
+        "deepseek",
+        "gemini",
+        "openai",
+      ]
+      const steps: ("claude" | "deepseek" | "gemini" | "openai")[] = ["claude", "deepseek", "gemini", "openai"]
+      const analysisFunctions = [
+        performClaudeAnalysis,
+        performDeepSeekAnalysis,
+        performGeminiAnalysis,
+        performOpenAIAnalysis,
+      ]
+
+      let overallError = null
+      const currentResults: AnalysisResult[] = []
+
+      for (let i = 0; i < providers.length; i++) {
+        const provider = providers[i]
+        const step = steps[i]
+        const analyzeFn = analysisFunctions[i]
+
+        console.log(`Starting ${provider} analysis...`)
+        setCurrentStep(step)
+
+        try {
+          const result = await analyzeFn(userInput)
+          console.log(`${provider} analysis completed:`, result.content.length, "characters")
+          currentResults.push(result)
+          setAnalysisResults([...currentResults]) // Update incrementally
+        } catch (e) {
+          const errorMessage = e instanceof Error ? e.message : `Unbekannter Fehler mit ${provider}`
+          console.error(`${provider} analysis error:`, e)
+          currentResults.push({
+            provider,
+            content: `❌ Fehler bei der ${getProviderDisplayName(provider)}-Analyse: ${errorMessage}`,
+            timestamp: Date.now(),
+          })
+          setAnalysisResults([...currentResults]) // Update incrementally with error
+          overallError = overallError ? `${overallError}, ${provider}-Fehler` : `${provider}-Fehler`
+        }
       }
 
-      setMessages([userMessage])
-
-      try {
-        // Step 1: Claude Analysis
-        console.log("Starting Claude analysis...")
-        setCurrentStep("claude")
-
-        try {
-          const claudeResult = await performClaudeAnalysis(userInput)
-          console.log("Claude analysis completed:", claudeResult.content.length, "characters")
-
-          const claudeMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: claudeResult.content,
-            provider: "anthropic",
-            timestamp: claudeResult.timestamp,
-          }
-
-          setMessages((prev) => [...prev, claudeMessage])
-          setAnalysisResults((prev) => [...prev, claudeResult])
-        } catch (claudeError) {
-          console.error("Claude analysis error:", claudeError)
-          const errorMessage = claudeError instanceof Error ? claudeError.message : "Unbekannter Fehler mit Claude"
-
-          const claudeErrorMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: `Fehler bei der Claude-Analyse: ${errorMessage}`,
-            provider: "anthropic",
-            timestamp: Date.now(),
-          }
-
-          setMessages((prev) => [...prev, claudeErrorMessage])
-          setError(`Claude-Fehler: ${errorMessage}`)
-        }
-
-        // Step 2: DeepSeek Analysis
-        console.log("Starting DeepSeek analysis...")
-        setCurrentStep("deepseek")
-
-        try {
-          const deepSeekResult = await performDeepSeekAnalysis(userInput)
-          console.log("DeepSeek analysis completed:", deepSeekResult.content.length, "characters")
-
-          const deepSeekMessage: Message = {
-            id: (Date.now() + 2).toString(),
-            role: "assistant",
-            content: deepSeekResult.content,
-            provider: "deepseek",
-            timestamp: deepSeekResult.timestamp,
-          }
-
-          setMessages((prev) => [...prev, deepSeekMessage])
-          setAnalysisResults((prev) => [...prev, deepSeekResult])
-        } catch (deepSeekError) {
-          console.error("DeepSeek analysis error:", deepSeekError)
-          const errorMessage =
-            deepSeekError instanceof Error ? deepSeekError.message : "Unbekannter Fehler mit DeepSeek"
-
-          const deepSeekErrorMessage: Message = {
-            id: (Date.now() + 2).toString(),
-            role: "assistant",
-            content: `Fehler bei der DeepSeek-Analyse: ${errorMessage}`,
-            provider: "deepseek",
-            timestamp: Date.now(),
-          }
-
-          setMessages((prev) => [...prev, deepSeekErrorMessage])
-          setError((prev) => (prev ? `${prev}, DeepSeek-Fehler: ${errorMessage}` : `DeepSeek-Fehler: ${errorMessage}`))
-        }
-
-        // Step 3: Gemini Analysis
-        console.log("Starting Gemini analysis...")
-        setCurrentStep("gemini")
-
-        try {
-          const geminiResult = await performGeminiAnalysis(userInput)
-          console.log("Gemini analysis completed:", geminiResult.content.length, "characters")
-
-          const geminiMessage: Message = {
-            id: (Date.now() + 3).toString(),
-            role: "assistant",
-            content: geminiResult.content,
-            provider: "gemini",
-            timestamp: geminiResult.timestamp,
-          }
-
-          setMessages((prev) => [...prev, geminiMessage])
-          setAnalysisResults((prev) => [...prev, geminiResult])
-        } catch (geminiError) {
-          console.error("Gemini analysis error:", geminiError)
-          const errorMessage = geminiError instanceof Error ? geminiError.message : "Unbekannter Fehler mit Gemini"
-
-          const geminiErrorMessage: Message = {
-            id: (Date.now() + 3).toString(),
-            role: "assistant",
-            content: `Fehler bei der Gemini-Analyse: ${errorMessage}`,
-            provider: "gemini",
-            timestamp: Date.now(),
-          }
-
-          setMessages((prev) => [...prev, geminiErrorMessage])
-          setError((prev) => (prev ? `${prev}, Gemini-Fehler: ${errorMessage}` : `Gemini-Fehler: ${errorMessage}`))
-        }
-
-        // Step 4: OpenAI Analysis
-        console.log("Starting OpenAI analysis...")
-        setCurrentStep("openai")
-
-        try {
-          const openaiResult = await performOpenAIAnalysis(userInput)
-          console.log("OpenAI analysis completed:", openaiResult.content.length, "characters")
-
-          const openaiMessage: Message = {
-            id: (Date.now() + 4).toString(),
-            role: "assistant",
-            content: openaiResult.content,
-            provider: "openai",
-            timestamp: openaiResult.timestamp,
-          }
-
-          setMessages((prev) => [...prev, openaiMessage])
-          setAnalysisResults((prev) => [...prev, openaiResult])
-        } catch (openaiError) {
-          console.error("OpenAI analysis error:", openaiError)
-          const errorMessage = openaiError instanceof Error ? openaiError.message : "Unbekannter Fehler mit OpenAI"
-
-          const openaiErrorMessage: Message = {
-            id: (Date.now() + 4).toString(),
-            role: "assistant",
-            content: `Fehler bei der OpenAI-Analyse: ${errorMessage}`,
-            provider: "openai",
-            timestamp: Date.now(),
-          }
-
-          setMessages((prev) => [...prev, openaiErrorMessage])
-          setError((prev) => (prev ? `${prev}, OpenAI-Fehler: ${errorMessage}` : `OpenAI-Fehler: ${errorMessage}`))
-        }
-
-        setCurrentStep("complete")
-      } catch (error) {
-        console.error("Comparison analysis error:", error)
-        const errorMessage: Message = {
-          id: (Date.now() + 5).toString(),
-          role: "assistant",
-          content: `Fehler bei der Vergleichsanalyse: ${error instanceof Error ? error.message : "Unbekannter Fehler"}. Bitte versuchen Sie es erneut.`,
-          timestamp: Date.now(),
-        }
-        setMessages((prev) => [...prev, errorMessage])
-        setError(`Allgemeiner Fehler: ${error instanceof Error ? error.message : "Unbekannter Fehler"}`)
-      } finally {
-        setIsAnalyzing(false)
+      if (overallError) {
+        setError(overallError)
       }
+      setCurrentStep("complete")
+
+      // Trigger final analysis if there are any valid results
+      if (currentResults.some((r) => r.content && !r.content.startsWith("❌") && !r.content.startsWith("⚠️"))) {
+        await performFinalAnalysis(currentResults)
+      } else {
+        // If all initial analyses failed, skip final analysis
+        setCurrentStep("all_complete")
+      }
+
+      setIsAnalyzing(false)
     },
     [isAnalyzing],
   )
 
-  // Claude verwendet jetzt einen nicht-streamenden Ansatz
-  const performClaudeAnalysis = async (userInput: string): Promise<AnalysisResult> => {
-    const startTime = Date.now()
-    console.log("Starting Claude analysis with non-streaming approach...")
+  const getProviderDisplayName = (provider: "anthropic" | "deepseek" | "gemini" | "openai") => {
+    switch (provider) {
+      case "anthropic":
+        return "Claude"
+      case "deepseek":
+        return "DeepSeek"
+      case "gemini":
+        return "Gemini"
+      case "openai":
+        return "GPT-4o"
+      default:
+        return provider
+    }
+  }
 
+  // Claude
+  const performClaudeAnalysis = async (userInput: string): Promise<AnalysisResult> => {
     const response = await fetch("/api/anthropic", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: userInput,
-          },
-        ],
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: userInput }] }),
     })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Claude API error:", response.status, errorText)
-      throw new Error(`Failed to get response from Claude: ${response.status}`)
-    }
-
-    // Parse the JSON response
     const data = await response.json()
-
-    if (!data.content || typeof data.content !== "string" || !data.content.trim()) {
-      console.error("Invalid Claude response:", data)
-      throw new Error("No content received from Claude")
-    }
-
-    console.log("Claude analysis completed:", {
-      contentLength: data.content.length,
-      preview: data.content.substring(0, 200) + "...",
-      duration: Date.now() - startTime,
-    })
-
-    return {
-      provider: "anthropic",
-      content: data.content,
-      timestamp: Date.now(),
-    }
+    if (!response.ok) throw new Error(data.details || `Claude API Fehler: ${response.status}`)
+    if (!data.content?.trim()) throw new Error("Kein Inhalt von Claude erhalten")
+    return { provider: "anthropic", content: data.content, timestamp: Date.now() }
   }
 
-  // Gemini verwendet einen nicht-streamenden Ansatz mit Fehlerbehandlung
+  // Gemini
   const performGeminiAnalysis = async (userInput: string): Promise<AnalysisResult> => {
-    const startTime = Date.now()
-    console.log("Starting Gemini analysis with non-streaming approach...")
-
-    try {
-      const response = await fetch("/api/gemini", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: userInput,
-            },
-          ],
-        }),
-      })
-
-      const data = await response.json()
-
-      // Handle quota/rate limit errors specifically
-      if (response.status === 429) {
-        console.log("Gemini quota exceeded, using fallback message")
-        return {
-          provider: "gemini",
-          content: `⚠️ **Gemini API Quota erreicht**
-
-${data.details || "Das kostenlose Kontingent für Gemini wurde überschritten."}
-
-**Hinweis**: Die Markenrechtsanalyse wird mit den anderen Modellen fortgesetzt. Für eine vollständige Vier-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das Gemini-Kontingent wieder verfügbar ist.
-
-**Alternative**: Sie können die Einzelanalyse-Funktion verwenden, um Gemini separat zu testen, sobald das Kontingent wieder verfügbar ist.`,
-          timestamp: Date.now(),
-        }
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("Gemini API error:", response.status, errorText)
-        throw new Error(`Failed to get response from Gemini: ${response.status}`)
-      }
-
-      if (!data.content || typeof data.content !== "string" || !data.content.trim()) {
-        console.error("Invalid Gemini response:", data)
-        throw new Error("No content received from Gemini")
-      }
-
-      console.log("Gemini analysis completed:", {
-        contentLength: data.content.length,
-        preview: data.content.substring(0, 200) + "...",
-        duration: Date.now() - startTime,
-      })
-
+    const response = await fetch("/api/gemini", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: userInput }] }),
+    })
+    const data = await response.json()
+    if (response.status === 429) {
+      // Quota exceeded
       return {
         provider: "gemini",
-        content: data.content,
-        timestamp: Date.now(),
-      }
-    } catch (error) {
-      console.error("Gemini analysis error:", error)
-
-      // Return a fallback message instead of throwing
-      return {
-        provider: "gemini",
-        content: `❌ **Gemini Analyse nicht verfügbar**
-
-Es gab einen Fehler bei der Verbindung zu Gemini: ${error instanceof Error ? error.message : "Unbekannter Fehler"}
-
-**Mögliche Ursachen**:
-- API-Kontingent überschritten (kostenlose Tier-Limits)
-- Temporäre Serverprobleme
-- Netzwerkverbindungsfehler
-
-**Empfehlung**: Die Analyse mit den anderen Modellen ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie Gemini später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
+        content: `⚠️ **Gemini API Quota erreicht**\n\n${data.details || "Das kostenlose Kontingent für Gemini wurde überschritten."}`,
         timestamp: Date.now(),
       }
     }
+    if (!response.ok) throw new Error(data.details || `Gemini API Fehler: ${response.status}`)
+    if (!data.content?.trim()) throw new Error("Kein Inhalt von Gemini erhalten")
+    return { provider: "gemini", content: data.content, timestamp: Date.now() }
   }
 
-  // OpenAI verwendet einen nicht-streamenden Ansatz mit Fehlerbehandlung
+  // OpenAI
   const performOpenAIAnalysis = async (userInput: string): Promise<AnalysisResult> => {
-    const startTime = Date.now()
-    console.log("Starting OpenAI analysis with non-streaming approach...")
-
-    try {
-      const response = await fetch("/api/openai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: "user",
-              content: userInput,
-            },
-          ],
-        }),
-      })
-
-      const data = await response.json()
-
-      // Handle quota/rate limit errors specifically
-      if (response.status === 429) {
-        console.log("OpenAI quota exceeded, using fallback message")
-        return {
-          provider: "openai",
-          content: `⚠️ **OpenAI API Quota erreicht**
-
-${data.details || "Das Kontingent für OpenAI wurde überschritten."}
-
-**Hinweis**: Die Markenrechtsanalyse wird mit den anderen Modellen fortgesetzt. Für eine vollständige Vier-Modell-Vergleichsanalyse können Sie es später erneut versuchen, wenn das OpenAI-Kontingent wieder verfügbar ist.
-
-**Alternative**: Sie können die Einzelanalyse-Funktion verwenden, um OpenAI separat zu testen, sobald das Kontingent wieder verfügbar ist.`,
-          timestamp: Date.now(),
-        }
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("OpenAI API error:", response.status, errorText)
-        throw new Error(`Failed to get response from OpenAI: ${response.status}`)
-      }
-
-      if (!data.content || typeof data.content !== "string" || !data.content.trim()) {
-        console.error("Invalid OpenAI response:", data)
-        throw new Error("No content received from OpenAI")
-      }
-
-      console.log("OpenAI analysis completed:", {
-        contentLength: data.content.length,
-        preview: data.content.substring(0, 200) + "...",
-        duration: Date.now() - startTime,
-      })
-
+    const response = await fetch("/api/openai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: userInput }] }),
+    })
+    const data = await response.json()
+    if (response.status === 429) {
+      // Quota exceeded
       return {
         provider: "openai",
-        content: data.content,
-        timestamp: Date.now(),
-      }
-    } catch (error) {
-      console.error("OpenAI analysis error:", error)
-
-      // Return a fallback message instead of throwing
-      return {
-        provider: "openai",
-        content: `❌ **OpenAI Analyse nicht verfügbar**
-
-Es gab einen Fehler bei der Verbindung zu OpenAI: ${error instanceof Error ? error.message : "Unbekannter Fehler"}
-
-**Mögliche Ursachen**:
-- API-Kontingent überschritten
-- Temporäre Serverprobleme
-- Netzwerkverbindungsfehler
-
-**Empfehlung**: Die Analyse mit den anderen Modellen ist weiterhin verfügbar und liefert professionelle Markenrechtsbewertungen. Versuchen Sie OpenAI später erneut oder nutzen Sie die Einzelanalyse-Funktion.`,
+        content: `⚠️ **OpenAI API Quota erreicht**\n\n${data.details || "Das Kontingent für OpenAI wurde überschritten."}`,
         timestamp: Date.now(),
       }
     }
+    if (!response.ok) throw new Error(data.details || `OpenAI API Fehler: ${response.status}`)
+    if (!data.content?.trim()) throw new Error("Kein Inhalt von OpenAI erhalten")
+    return { provider: "openai", content: data.content, timestamp: Date.now() }
   }
 
-  // DeepSeek verwendet weiterhin Streaming
+  // DeepSeek (Streaming)
   const performDeepSeekAnalysis = async (userInput: string): Promise<AnalysisResult> => {
-    const startTime = Date.now()
-    console.log("Starting DeepSeek analysis...")
-
     const response = await fetch("/api/deepseek", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: userInput,
-          },
-        ],
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: userInput }] }),
     })
-
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error("DeepSeek API error:", response.status, errorText)
-      throw new Error(`Failed to get response from DeepSeek: ${response.status}`)
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.details || `DeepSeek API Fehler: ${response.status}`)
     }
-
     const reader = response.body?.getReader()
+    if (!reader) throw new Error("Kein Response Body von DeepSeek")
+
     const decoder = new TextDecoder()
-
-    if (!reader) {
-      throw new Error("No response body from DeepSeek")
-    }
-
     let fullContent = ""
-    let chunkCount = 0
-
     try {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         const chunk = decoder.decode(value, { stream: true })
-        chunkCount++
-
-        // DeepSeek Format
         const lines = chunk.split("\n")
-
         for (const line of lines) {
           if (line.startsWith("data: ")) {
+            const dataContent = line.slice(6).trim()
+            if (dataContent === "[DONE]") continue
             try {
-              const dataContent = line.slice(6).trim()
-              if (dataContent === "[DONE]") continue
-
               const data = JSON.parse(dataContent)
-              if (data.content) {
-                fullContent += data.content
-              } else if (data.choices?.[0]?.delta?.content) {
-                fullContent += data.choices[0].delta.content
-              }
+              if (data.content) fullContent += data.content
+              else if (data.choices?.[0]?.delta?.content) fullContent += data.choices[0].delta.content
             } catch (e) {
-              // Skip invalid JSON
+              /* Skip invalid JSON */
             }
           }
         }
       }
-    } catch (error) {
-      console.error("Error processing DeepSeek stream:", error)
-      throw new Error(`Error processing DeepSeek stream: ${error instanceof Error ? error.message : "Unknown error"}`)
     } finally {
       reader.releaseLock()
     }
+    if (!fullContent.trim()) throw new Error("Kein Inhalt von DeepSeek erhalten")
+    return { provider: "deepseek", content: fullContent.trim(), timestamp: Date.now() }
+  }
 
-    console.log("DeepSeek analysis completed:", {
-      contentLength: fullContent.length,
-      chunkCount,
-      duration: Date.now() - startTime,
-      preview: fullContent.substring(0, 200) + "...",
-    })
-
-    if (!fullContent.trim()) {
-      throw new Error("No content received from DeepSeek")
-    }
-
-    return {
-      provider: "deepseek",
-      content: fullContent.trim(),
-      timestamp: Date.now(),
+  const performFinalAnalysis = async (reports: AnalysisResult[]) => {
+    console.log("Starting final analysis...")
+    setCurrentStep("final")
+    try {
+      const response = await fetch("/api/final-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reports }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.details || "Final analysis failed")
+      }
+      setFinalAnalysis(data.content)
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : "Unbekannter Fehler"
+      console.error("Final analysis error:", e)
+      setFinalAnalysis(`❌ Fehler bei der finalen Analyse: ${errorMessage}`)
+    } finally {
+      setCurrentStep("all_complete")
     }
   }
 
   const clearAnalysis = useCallback(() => {
-    setMessages([])
+    // setMessages([])
     setAnalysisResults([])
     setCurrentStep("idle")
     setError(null)
+    setFinalAnalysis(null)
   }, [])
 
   return {
-    messages,
+    // messages, // Expose if needed for any reason
     analysisResults,
     isAnalyzing,
     currentStep,
     error,
     runComparisonAnalysis,
     clearAnalysis,
+    finalAnalysis,
   }
 }
+
+export type { AnalysisResult }
