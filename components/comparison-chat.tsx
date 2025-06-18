@@ -7,22 +7,9 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
-import {
-  Bot,
-  Trash2,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Settings2,
-  FileText,
-  Zap,
-  Users,
-  Target,
-  Scale,
-} from "lucide-react"
+import { Bot, Trash2, Clock, CheckCircle, AlertCircle, Settings2, FileText, Zap, Users, Target } from "lucide-react"
 import { useEffect, useState } from "react"
 import type { AnalysisResult } from "../hooks/useComparisonAnalysis"
-import OppositionDialog from "./opposition-dialog"
 
 export default function ComparisonChat() {
   const { analysisResults, isAnalyzing, currentStep, error, runComparisonAnalysis, clearAnalysis, finalAnalysis } =
@@ -35,7 +22,6 @@ export default function ComparisonChat() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [modalResults, setModalResults] = useState<AnalysisResult[]>([])
   const [activeModalTab, setActiveModalTab] = useState<string>("final-analysis")
-  const [showOppositionDialog, setShowOppositionDialog] = useState(false)
 
   // Calculate progress percentage
   const getProgressPercentage = () => {
@@ -470,33 +456,13 @@ Bitte führen Sie eine vollständige Markenrechtsanalyse basierend auf den oben 
               <AlertCircle className="h-8 w-8 mr-2" /> Keine Analyseergebnisse zum Anzeigen.
             </div>
           )}
-          <DialogFooter className="p-4 border-t bg-slate-50 flex justify-between">
-            <Button
-              onClick={() => setShowOppositionDialog(true)}
-              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold"
-              disabled={!finalAnalysis}
-            >
-              <Scale className="h-4 w-4 mr-2" />
-              Widerspruch einlegen
-            </Button>
+          <DialogFooter className="p-4 border-t bg-slate-50">
             <Button variant="outline" onClick={() => setIsModalOpen(false)} className="font-semibold">
               Schließen
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <OppositionDialog
-        isOpen={showOppositionDialog}
-        onClose={() => setShowOppositionDialog(false)}
-        caseData={{
-          auftragsmarke,
-          gegenmarke,
-          final_analysis: finalAnalysis || undefined,
-          recommendation: "Widerspruch einlegen", // You could extract this from finalAnalysis
-          confidence_level: 85, // You could extract this from finalAnalysis
-        }}
-        analysisResults={analysisResults}
-      />
     </div>
   )
 }

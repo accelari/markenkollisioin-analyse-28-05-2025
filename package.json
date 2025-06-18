@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "next dev",
+    "lint": "next lint",
+    "start": "next start"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "latest",
@@ -39,7 +39,6 @@
     "@radix-ui/react-toggle": "1.1.1",
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
-    "@supabase/supabase-js": "latest",
     "ai": "latest",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
