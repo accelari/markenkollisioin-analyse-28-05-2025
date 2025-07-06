@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Scale, AlertTriangle, CheckCircle, Loader2 } from "lucide-react"
+import type { CaseData } from "@/lib/supabase"
 
 interface OppositionDialogProps {
   isOpen: boolean
@@ -27,9 +28,8 @@ export default function OppositionDialog({ isOpen, onClose, caseData, analysisRe
   const [clientName, setClientName] = useState("")
   const [clientEmail, setClientEmail] = useState("")
   const [additionalNotes, setAdditionalNotes] = useState("")
-  // Remove caseNumber and caseUrl
-  // const [caseNumber, setCaseNumber] = useState<string | null>(null)
-  // const [caseUrl, setCaseUrl] = useState<string | null>(null)
+  const [caseNumber, setCaseNumber] = useState<string | null>(null)
+  const [caseUrl, setCaseUrl] = useState<string | null>(null)
 
   const handleSubmit = async () => {
     if (!clientName.trim() || !clientEmail.trim()) {
@@ -37,9 +37,45 @@ export default function OppositionDialog({ isOpen, onClose, caseData, analysisRe
     }
 
     setStep("processing")
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    setStep("success")
+
+    try {
+      // Prepare case data
+      const caseDataToSave: Partial<CaseData> = {
+        auftragsmarke: caseData.auftragsmarke,
+        gegenmarke: caseData.gegenmarke,
+        final_analysis: caseData.final_analysis,
+        recommendation: caseData.recommendation,
+        confidence_level: caseData.confidence_level,
+        client_name: clientName,
+        client_email: clientEmail,
+        // Add analysis results
+        claude_analysis: analysisResults.find((r) => r.provider === "anthropic")?.content,
+        deepseek_analysis: analysisResults.find((r) => r.provider === "deepseek")?.content,
+        gemini_analysis: analysisResults.find((r) => r.provider === "gemini")?.content,
+        openai_analysis: analysisResults.find((r) => r.provider === "openai")?.content,
+      }
+
+      // Save to database
+      const response = await fetch("/api/cases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(caseDataToSave),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.details || "Failed to save case")
+      }
+
+      setCaseNumber(result.case_number)
+      setCaseUrl(result.case_url)
+      setStep("success")
+    } catch (error) {
+      console.error("Error saving case:", error)
+      setStep("form")
+      // You could add error handling here
+    }
   }
 
   const handleClose = () => {
@@ -47,9 +83,8 @@ export default function OppositionDialog({ isOpen, onClose, caseData, analysisRe
     setClientName("")
     setClientEmail("")
     setAdditionalNotes("")
-    // Remove caseNumber and caseUrl
-    // setCaseNumber(null)
-    // setCaseUrl(null)
+    setCaseNumber(null)
+    setCaseUrl(null)
     onClose()
   }
 
@@ -133,18 +168,21 @@ export default function OppositionDialog({ isOpen, onClose, caseData, analysisRe
         {step === "success" && (
           <div className="text-center py-8 space-y-4">
             <CheckCircle className="h-16 w-16 mx-auto text-green-500" />
-            <h3 className="text-xl font-bold text-green-800">Informationen für Widerspruch erfasst!</h3>
+            <h3 className="text-xl font-bold text-green-800">Fall erfolgreich gespeichert!</h3>
             <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-              <p className="text-green-700 text-sm mt-1">
-                Die folgenden Informationen wurden für die manuelle Bearbeitung erfasst:
+              <p className="text-green-700 text-sm">
+                <strong>Fall-Nummer:</strong> {caseNumber}
               </p>
-              <p className="text-green-800 font-semibold mt-2">Name: {clientName}</p>
-              <p className="text-green-800 font-semibold">E-Mail: {clientEmail}</p>
-              {additionalNotes && <p className="text-green-800 font-semibold">Notizen: {additionalNotes}</p>}
+              <p className="text-green-700 text-sm mt-1">
+                <strong>Fall-Link:</strong>{" "}
+                <a href={caseUrl} className="underline" target="_blank" rel="noopener noreferrer">
+                  {caseUrl}
+                </a>
+              </p>
+              <p className="text-green-700 text-sm mt-2">
+                Alle Analysen und Dokumente wurden gespeichert. Sie können den Fall über den Link aufrufen.
+              </p>
             </div>
-            <p className="text-slate-600 text-sm">
-              Bitte verwenden Sie diese Informationen, um den Widerspruch manuell vorzubereiten.
-            </p>
           </div>
         )}
 
